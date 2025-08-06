@@ -1,5 +1,7 @@
 use std::process::{Command, exit};
 use std::env;
+use nix::sched::{unshare, CloneFlags};
+use nix::unistd::sethostname;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -9,6 +11,17 @@ fn main() {
         eprintln!("Usage: {} run <command> [args...]", args[0]);
         exit(1);
     }
+    
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWUTS){
+        eprintln!("Failed to unshare UTS namespace {}", e);
+        exit(1);
+    }
+
+    if let Err(e) = sethostname("my-container-host"){
+        eprintln!("Failed to set hostname {}", e);
+        exit(1);
+    }
+
     
     let command_to_run = &args[2];
     let command_args = &args[3..];

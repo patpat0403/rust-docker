@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Provides bindings to Linux system calls like `chroot`, `unshare`, and `clone`.
-nix = "0.27"
+nix = { version = "0.27.0", features = ["sched", "hostname"] }
 # An easy-to-use HTTP client for making web requests (e.g., to Docker Hub).
 # The `blocking` feature is useful for simpler, synchronous code.
 # The `json` feature allows for easy JSON parsing.
