@@ -1,7 +1,7 @@
 use std::process::{Command, exit};
 use std::env;
 use nix::sched::{unshare, CloneFlags};
-use nix::unistd::sethostname;
+use nix::unistd::{sethostname, chroot, chdir};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -12,6 +12,7 @@ fn main() {
         exit(1);
     }
     
+    //step 2 create a new UTS namespace and set hostname for that new namespace
     if let Err(e) = unshare(CloneFlags::CLONE_NEWUTS){
         eprintln!("Failed to unshare UTS namespace {}", e);
         exit(1);
@@ -22,7 +23,19 @@ fn main() {
         exit(1);
     }
 
-    
+    //step 3 change root filesystem
+
+    if let Err(e) = chroot("alpine_fs"){
+        eprintln!("Failed to set root filesystem {}", e);
+        exit(1);
+    }
+
+    if let Err(e) = chdir("/"){
+        eprintln!("Failed to change to root dir in container {}", e);
+        exit(1);
+    }
+
+
     let command_to_run = &args[2];
     let command_args = &args[3..];
 
