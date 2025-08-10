@@ -34,19 +34,19 @@ fn main() {
                 exit(1);
             }
 
-    if !uid.is_root() {
-        if let Err(e) = setuid(uid) {
-            eprintln!("Failed to setuid in parent: {}", e);
-            exit(1);
-        }
-    }
+    // if !uid.is_root() {
+    //     if let Err(e) = setuid(uid) {
+    //         eprintln!("Failed to setuid in parent: {}", e);
+    //         exit(1);
+    //     }
+    // }
     
-    if gid.as_raw() != 0 {
-        if let Err(e) = setgid(gid) {
-            eprintln!("Failed to setgid in parent: {}", e);
-            exit(1);
-        }
-    }
+    // if gid.as_raw() != 0 {
+    //     if let Err(e) = setgid(gid) {
+    //         eprintln!("Failed to setgid in parent: {}", e);
+    //         exit(1);
+    //     }
+    // }
 
     let command_to_run = &args[2];
     let command_args = &args[3..];
@@ -94,14 +94,14 @@ fn main() {
             }
             
             
-            if let Err(e) = setgid(nix::unistd::Gid::from_raw(gid.as_raw())) {
-                eprintln!("Failed to setgid in child: {}", e);
-                exit(1);
-            }
-            if let Err(e) = setuid(nix::unistd::Uid::from_raw(uid.as_raw())) {
-                eprintln!("Failed to setuid in child: {}", e);
-                exit(1);
-            }
+            // if let Err(e) = setgid(nix::unistd::Gid::from_raw(gid.as_raw())) {
+            //     eprintln!("Failed to setgid in child: {}", e);
+            //     exit(1);
+            // }
+            // if let Err(e) = setuid(nix::unistd::Uid::from_raw(uid.as_raw())) {
+            //     eprintln!("Failed to setuid in child: {}", e);
+            //     exit(1);
+            // }
 
             
             if let Err(e) = sethostname("my-container-host") {
