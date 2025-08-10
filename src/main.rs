@@ -33,11 +33,6 @@ fn main() {
     let uid = getuid();
     let gid = getgid();
 
-    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER) {
-        eprintln!("Failed to unshare User namespace: {}", e);
-        exit(1);
-    }
-
     // Set UID and GID to the mapped values (0 in this case)
     if let Err(e) = setuid(uid) {
         eprintln!("Failed to setuid in parent: {}", e);
