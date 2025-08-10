@@ -3,7 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::Write;
 use nix::sched::{unshare, CloneFlags};
-use nix::unistd::{sethostname, chroot, chdir, setgroups, setuid, setgid};
+use nix::unistd::{sethostname, chroot, chdir, setgroups, setuid, setgid,getuid, getgid};
 use nix::sys::wait::waitpid;
 use nix::mount::{mount, umount2, MsFlags, MntFlags};
 use nix::unistd::{fork, execvp, ForkResult};
@@ -29,14 +29,22 @@ fn main() {
         exit(1);
     }
 
-        // Set UID and GID to the mapped values (e.g., 1000 for your user)
-    // This is a critical step to gain permissions to write the uid_map.
-    if let Err(e) = setuid(nix::unistd::Uid::from_raw(1000)) {
+    // Get the current user's UID and GID, which will be 0 when run as root
+    let uid = getuid();
+    let gid = getgid();
+
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER) {
+        eprintln!("Failed to unshare User namespace: {}", e);
+        exit(1);
+    }
+
+    // Set UID and GID to the mapped values (0 in this case)
+    if let Err(e) = setuid(uid) {
         eprintln!("Failed to setuid in parent: {}", e);
         exit(1);
     }
     
-    if let Err(e) = setgid(nix::unistd::Gid::from_raw(1000)) {
+    if let Err(e) = setgid(gid) {
         eprintln!("Failed to setgid in parent: {}", e);
         exit(1);
     }
@@ -61,8 +69,11 @@ fn main() {
             // ------------------------------------------------------------------------------------------------
 
             // UID/GID Mapping and Privilege Dropping
+            let uid_map = format!("0 {} 1", uid.as_raw());
+            let gid_map = format!("0 {} 1", gid.as_raw());
+
             if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
-                if let Err(e) = uid_file.write_all(b"0 1000 1") {
+                if let Err(e) = uid_file.write_all(uid_map.as_bytes()) {
                     eprintln!("Failed to write to uid_map: {}", e);
                     exit(1);
                 }
@@ -76,7 +87,7 @@ fn main() {
             }
 
             if let Ok(mut gid_file) = File::create("/proc/self/gid_map") {
-                if let Err(e) = gid_file.write_all(b"0 1000 1") {
+                if let Err(e) = gid_file.write_all(gid_map.as_bytes()) {
                     eprintln!("Failed to write to gid_map: {}", e);
                     exit(1);
                 }
