@@ -38,15 +38,15 @@ fn main() {
     }
     
     // Set UID and GID to the mapped values (0 in this case)
-    if let Err(e) = setuid(uid) {
-        eprintln!("Failed to setuid in parent: {}", e);
-        exit(1);
-    }
+    // if let Err(e) = setuid(uid) {
+    //     eprintln!("Failed to setuid in parent: {}", e);
+    //     exit(1);
+    // }
     
-    if let Err(e) = setgid(gid) {
-        eprintln!("Failed to setgid in parent: {}", e);
-        exit(1);
-    }
+    // if let Err(e) = setgid(gid) {
+    //     eprintln!("Failed to setgid in parent: {}", e);
+    //     exit(1);
+    // }
 
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
