@@ -3,7 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::Write;
 use nix::sched::{unshare, CloneFlags};
-use nix::unistd::{sethostname, chroot, chdir, fork, ForkResult};
+use nix::unistd::{sethostname, chroot, chdir, setgroups, setuid, setgid};
 use nix::mount::{mount, umount2, MsFlags, MntFlags};
 
 fn main() {
@@ -20,47 +20,51 @@ fn main() {
         eprintln!("Failed to unshare User namespace {}", e);
         exit(1);
     }
-        // Fork a child process to handle the uid/gid mapping
-    match unsafe { fork() } {
-        Ok(ForkResult::Parent { child }) => {
-            // Parent process waits for the child to complete
-            // and then exits
-            nix::sys::wait::waitpid(child, None).unwrap();
-            exit(0);
-        }
-        Ok(ForkResult::Child) => {
-            // Child process continues with the container setup
-            
-            // UID and GID mapping in the child
-            let uid_map = "0 1000 1"; 
-            let gid_map = "0 1000 1";
+        
+    // ------------------------------------------------------------------------------------------------
+    // Correct Order for UID/GID mapping
+    // ------------------------------------------------------------------------------------------------
 
-            if let Ok(mut file) = File::create("/proc/self/uid_map") {
-                if let Err(e) = file.write_all(uid_map.as_bytes()) {
-                    eprintln!("Failed to write to uid_map: {}", e);
-                    exit(1);
-                }
-            }
-
-            if let Ok(mut file) = File::create("/proc/self/setgroups") {
-                if let Err(e) = file.write_all(b"deny") {
-                    eprintln!("Failed to write to setgroups: {}", e);
-                    exit(1);
-                }
-            }
-
-            if let Ok(mut file) = File::create("/proc/self/gid_map") {
-                if let Err(e) = file.write_all(gid_map.as_bytes()) {
-                    eprintln!("Failed to write to gid_map: {}", e);
-                    exit(1);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to fork: {}", e);
+    // 1. Write the UID map
+    if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
+        if let Err(e) = uid_file.write_all(b"0 1000 1") {
+            eprintln!("Failed to write to uid_map: {}", e);
             exit(1);
         }
     }
+
+    // 2. Disable setgroups to allow GID mapping
+    if let Ok(mut setgroups_file) = File::create("/proc/self/setgroups") {
+        if let Err(e) = setgroups_file.write_all(b"deny") {
+            eprintln!("Failed to write to setgroups: {}", e);
+            exit(1);
+        }
+    }
+
+    // 3. Write the GID map
+    if let Ok(mut gid_file) = File::create("/proc/self/gid_map") {
+        if let Err(e) = gid_file.write_all(b"0 1000 1") {
+            eprintln!("Failed to write to gid_map: {}", e);
+            exit(1);
+        }
+    }
+    
+    // 4. Drop privileges and become root in the new namespace
+    if let Err(e) = setgroups(&[]) {
+        eprintln!("Failed to setgroups in child: {}", e);
+        exit(1);
+    }
+
+    if let Err(e) = setuid(nix::unistd::Uid::from_raw(0)) {
+        eprintln!("Failed to setuid in child: {}", e);
+        exit(1);
+    }
+    
+    if let Err(e) = setgid(nix::unistd::Gid::from_raw(0)) {
+        eprintln!("Failed to setgid in child: {}", e);
+        exit(1);
+    }
+
     if let Err(e) = unshare(CloneFlags::CLONE_NEWUTS){
         eprintln!("Failed to unshare UTS namespace {}", e);
         exit(1);
