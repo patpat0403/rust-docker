@@ -32,11 +32,11 @@ fn main() {
         exit(1);
     }
 
-    // // Create a new Mount namespace for filesystem isolation
-    // if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
-    //     eprintln!("Failed to unshare Mount namespace {}", e);
-    //     exit(1);
-    // }
+    // Create a new Mount namespace for filesystem isolation
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+        eprintln!("Failed to unshare Mount namespace {}", e);
+        exit(1);
+    }
 
     if let Err(e) = sethostname("my-container-host"){
         eprintln!("Failed to set hostname {}", e);
@@ -55,6 +55,18 @@ fn main() {
         eprintln!("Failed to change to root dir in container {}", e);
         exit(1);
     }
+
+    if let Err(e) = mount(
+    Some("proc"),
+    "/proc",
+    Some("proc"),
+    MsFlags::empty(),
+    None::<&str>,
+) {
+    eprintln!("Failed to mount /proc filesystem: {}", e);
+    // This is the line that is failing. The specific error code is key.
+    exit(1);
+}
 
 
     let command_to_run = &args[2];
