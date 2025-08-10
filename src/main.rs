@@ -19,21 +19,22 @@ fn main() {
         exit(1);
     }
 
-    if let Err(e) = sethostname("my-container-host"){
-        eprintln!("Failed to set hostname {}", e);
-        exit(1);
-    }
-    // step 4 isolate process
     if let Err(e) = unshare(CloneFlags::CLONE_NEWPID){
         eprintln!("Failed to create a new process {}", e);
         exit(1);
     }
 
-        // Create a new Mount namespace for filesystem isolation
+    // Create a new Mount namespace for filesystem isolation
     if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
         eprintln!("Failed to unshare Mount namespace {}", e);
         exit(1);
     }
+
+    if let Err(e) = sethostname("my-container-host"){
+        eprintln!("Failed to set hostname {}", e);
+        exit(1);
+    }
+    
 
     //step 3 change root filesystem
 
@@ -74,6 +75,11 @@ fn main() {
     
     // Wait for the child process to finish and get its exit status.
     let status = child.wait().expect("Failed to wait for child process");
+
+        // Unmount /proc after the child process terminates
+    if let Err(e) = umount2("/proc", MntFlags::MNT_DETACH) {
+        eprintln!("Failed to unmount /proc filesystem {}", e);
+    }
     
     // Propagate the child's exit code.
     exit(status.code().unwrap_or(1));
