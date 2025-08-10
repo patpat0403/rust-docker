@@ -92,11 +92,11 @@ fn main() {
                 }
             }
             
-            // // Correct order of privilege calls
-            // if let Err(e) = setgroups(&[]) {
-            //     eprintln!("Failed to setgroups in child: {}", e);
-            //     exit(1);
-            // }
+            // Correct order of privilege calls
+            if let Err(e) = setgroups(&[]) {
+                eprintln!("Failed to setgroups in child: {}", e);
+                exit(1);
+            }
             if let Err(e) = setgid(nix::unistd::Gid::from_raw(gid.as_raw())) {
                 eprintln!("Failed to setgid in child: {}", e);
                 exit(1);
