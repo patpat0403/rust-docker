@@ -24,10 +24,6 @@ fn main() {
     // Step 1: Unshare User namespace before forking
     // This is a critical step for permissions
     // ------------------------------------------------------------------------------------------------
-    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER) {
-        eprintln!("Failed to unshare User namespace: {}", e);
-        exit(1);
-    }
 
     // Get the current user's UID and GID, which will be 0 when run as root
     let uid = getuid();
@@ -35,6 +31,11 @@ fn main() {
     
     eprintln!("uid: {} ", uid );
     eprintln!("gid: {}", gid);
+
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER) {
+        eprintln!("Failed to unshare User namespace: {}", e);
+        exit(1);
+    }
     
     // Set UID and GID to the mapped values (0 in this case)
     if let Err(e) = setuid(uid) {
