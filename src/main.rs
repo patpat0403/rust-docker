@@ -21,7 +21,10 @@ fn main() {
         exit(1);
     }
           
-
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER){
+        eprintln!("Failed to unshare UTS namespace {}", e);
+        exit(1);
+    }
     if let Err(e) = unshare(CloneFlags::CLONE_NEWUTS){
         eprintln!("Failed to unshare UTS namespace {}", e);
         exit(1);
