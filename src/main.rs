@@ -1,165 +1,78 @@
-use std::process::{exit};
+use std::process::{Command, exit};
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use nix::sched::{unshare, CloneFlags};
-use nix::unistd::{sethostname, chroot, chdir, setgroups, setuid, setgid,getuid, getgid};
-use nix::sys::wait::waitpid;
-use nix::mount::{mount, umount2, MsFlags, MntFlags};
-use nix::unistd::{fork, execvp, ForkResult};
+use nix::unistd::{sethostname, chroot, chdir, setgroups, setuid, setgid};
 use std::ffi::CString;
+use std::ffi::NulError;
+use nix::unistd::{fork, execvp};
+use nix::sys::wait::waitpid;
+use nix::unistd::ForkResult;
+use nix::mount::{mount, umount2, MsFlags, MntFlags};
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     
+    // Ensure the program is called with at least two arguments: "run" and the command to execute.
     if args.len() < 3 || args[1] != "run" {
         eprintln!("Usage: {} run <command> [args...]", args[0]);
         exit(1);
     }
-    
-    let command_to_run = &args[2];
-    let command_args = &args[3..];
+          
 
-    // ------------------------------------------------------------------------------------------------
-    // Step 1: Unshare User namespace before forking
-    // This is a critical step for permissions
-    // ------------------------------------------------------------------------------------------------
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWUTS){
+        eprintln!("Failed to unshare UTS namespace {}", e);
+        exit(1);
+    }
 
-    // Get the current user's UID and GID, which will be 0 when run as root
-    let uid = getuid();
-    let gid = getgid();
-    
-    eprintln!("uid: {} ", uid );
-    eprintln!("gid: {}", gid);
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWPID){
+        eprintln!("Failed to create a new process {}", e);
+        exit(1);
+    }
 
-    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER) {
-        eprintln!("Failed to unshare User namespace: {}", e);
+    // Create a new Mount namespace for filesystem isolation
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+        eprintln!("Failed to unshare Mount namespace {}", e);
+        exit(1);
+    }
+
+    if let Err(e) = sethostname("my-container-host"){
+        eprintln!("Failed to set hostname {}", e);
         exit(1);
     }
     
-    // Set UID and GID to the mapped values (0 in this case)
-    // if let Err(e) = setuid(uid) {
-    //     eprintln!("Failed to setuid in parent: {}", e);
-    //     exit(1);
-    // }
-    
-    // if let Err(e) = setgid(gid) {
-    //     eprintln!("Failed to setgid in parent: {}", e);
-    //     exit(1);
-    // }
 
-    match unsafe { fork() } {
-        Ok(ForkResult::Parent { child }) => {
-            // ------------------------------------------------------------------------------------------------
-            // Parent Process Logic
-            // ------------------------------------------------------------------------------------------------
-            waitpid(child, None).unwrap();
-            
-            // Unmount /proc from the parent process after the child exits
-            if let Err(e) = umount2("/proc", MntFlags::MNT_DETACH) {
-                eprintln!("Failed to unmount /proc filesystem: {}", e);
-            }
-            
-            exit(0);
-        }
-        Ok(ForkResult::Child) => {
-            // ------------------------------------------------------------------------------------------------
-            // Child Process Logic
-            // ------------------------------------------------------------------------------------------------
+    //step 3 change root filesystem
 
-            // UID/GID Mapping and Privilege Dropping
-            let uid_map = format!("0 {} 1", uid.as_raw());
-            let gid_map = format!("0 {} 1", gid.as_raw());
-
-            if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
-                if let Err(e) = uid_file.write_all(uid_map.as_bytes()) {
-                    eprintln!("Failed to write to uid_map: {}", e);
-                    exit(1);
-                }
-            }
-            
-            if let Ok(mut setgroups_file) = File::create("/proc/self/setgroups") {
-                if let Err(e) = setgroups_file.write_all(b"deny") {
-                    eprintln!("Failed to write to setgroups: {}", e);
-                    exit(1);
-                }
-            }
-
-            if let Ok(mut gid_file) = File::create("/proc/self/gid_map") {
-                if let Err(e) = gid_file.write_all(gid_map.as_bytes()) {
-                    eprintln!("Failed to write to gid_map: {}", e);
-                    exit(1);
-                }
-            }
-            
-            if let Err(e) = setuid(nix::unistd::Uid::from_raw(0)) {
-                eprintln!("Failed to setuid in child: {}", e);
-                exit(1);
-            }
-            
-            if let Err(e) = setgid(nix::unistd::Gid::from_raw(0)) {
-                eprintln!("Failed to setgid in child: {}", e);
-                exit(1);
-            }
-
-            // Unshare other namespaces inside the child process
-            if let Err(e) = unshare(
-                CloneFlags::CLONE_NEWUTS |
-                CloneFlags::CLONE_NEWPID |
-                CloneFlags::CLONE_NEWNS
-            ) {
-                eprintln!("Failed to unshare namespaces: {}", e);
-                exit(1);
-            }
-            
-            // Set hostname, chroot, and mount /proc in the isolated environment
-            if let Err(e) = sethostname("my-container-host") {
-                eprintln!("Failed to set hostname {}", e);
-                exit(1);
-            }
-            
-            if let Err(e) = chroot("alpine_fs") {
-                eprintln!("Failed to set root filesystem {}", e);
-                exit(1);
-            }
-            
-            if let Err(e) = chdir("/") {
-                eprintln!("Failed to change to root dir in container {}", e);
-                exit(1);
-            }
-
-//   // Mount and unmount logic needs to be in a scope that handles cleanup
-//             {
-//                 if let Err(e) = mount(
-//                     Some("proc"),
-//                     "/proc",
-//                     Some("proc"),
-//                     MsFlags::empty(),
-//                     None::<&str>,
-//                 ) {
-//                     eprintln!("Failed to mount /proc filesystem {}", e);
-//                     exit(1);
-//                 }
-
-//                 // Execute the command here
-//                 let path = CString::new(command_to_run.as_str()).unwrap();
-//                 let args_c_string: Vec<CString> = command_args
-//                     .iter()
-//                     .map(|arg| CString::new(arg.as_str()).unwrap())
-//                     .collect();
-                
-//                 execvp(&path, &args_c_string)
-//                     .expect("Failed to execute command");
-
-//                 // If execvp fails, this code will run
-//                 if let Err(e) = umount2("/proc", MntFlags::MNT_DETACH) {
-//                     eprintln!("Failed to unmount /proc filesystem {}", e);
-//                 }
-//             }
-        }
-        Err(e) => {
-            eprintln!("Failed to fork: {}", e);
-            exit(1);
-        }
+    if let Err(e) = chroot("alpine_fs"){
+        eprintln!("Failed to set root filesystem {}", e);
+        exit(1);
     }
+
+    if let Err(e) = chdir("/"){
+        eprintln!("Failed to change to root dir in container {}", e);
+        exit(1);
+    }
+
+
+    let command_to_run = &args[2];
+    let command_args = &args[3..];
+
+    // Create a new `Command` instance for the command we want to run.
+    let mut child = Command::new(command_to_run)
+        .args(command_args)
+        .spawn()
+        .expect("Failed to spawn command");
+
+    // By default, `Command` will hook up the child process's stdin, stdout, and stderr
+    // to the parent's streams. So, no additional code is needed here.
+    
+    // Wait for the child process to finish and get its exit status.
+    let status = child.wait().expect("Failed to wait for child process");
+
+   
+    // Propagate the child's exit code.
+    exit(status.code().unwrap_or(1));
 }
