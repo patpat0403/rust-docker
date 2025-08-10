@@ -29,6 +29,18 @@ fn main() {
         exit(1);
     }
 
+        // Set UID and GID to the mapped values (e.g., 1000 for your user)
+    // This is a critical step to gain permissions to write the uid_map.
+    if let Err(e) = setuid(nix::unistd::Uid::from_raw(1000)) {
+        eprintln!("Failed to setuid in parent: {}", e);
+        exit(1);
+    }
+    
+    if let Err(e) = setgid(nix::unistd::Gid::from_raw(1000)) {
+        eprintln!("Failed to setgid in parent: {}", e);
+        exit(1);
+    }
+
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
             // ------------------------------------------------------------------------------------------------
