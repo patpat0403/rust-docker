@@ -122,7 +122,7 @@ fn main() {
                 Some("proc"),
                 "/proc",
                 Some("proc"),
-                MsFlags::empty(), // This is the key change
+                MsFlags::MS_REC | MsFlags::MS_PRIVATE, // This is the key change
                 None::<&str>,
             ) {
                 eprintln!("Failed to mount /proc filesystem {}", e);
