@@ -101,6 +101,7 @@ fn main() {
                 eprintln!("Failed to setuid in child: {}", e);
                 exit(1);
             }
+
             
             if let Err(e) = sethostname("my-container-host") {
                 eprintln!("Failed to set hostname {}", e);
@@ -122,7 +123,7 @@ fn main() {
                 Some("proc"),
                 "/proc",
                 Some("proc"),
-                MsFlags::MS_REC | MsFlags::MS_PRIVATE, // This is the key change
+                MsFlags::empty(), // This is the key change
                 None::<&str>,
             ) {
                 eprintln!("Failed to mount /proc filesystem {}", e);
