@@ -1,13 +1,13 @@
 use std::process::{exit};
 use std::env;
-use std::ffi::{CString, CStr};
 use std::fs::File;
 use std::io::Write;
 use nix::sched::{unshare, CloneFlags};
 use nix::unistd::{sethostname, chroot, chdir, setgroups, setuid, setgid, getuid, getgid};
-use nix::sys::wait::{waitpid, WaitStatus};
-use nix::mount::{mount, MsFlags, umount2, MntFlags};
+use nix::sys::wait::waitpid;
+use nix::mount::{mount, umount2, MsFlags, MntFlags};
 use nix::unistd::{fork, execvp, ForkResult};
+use std::ffi::CString;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -17,43 +17,62 @@ fn main() {
         exit(1);
     }
     
-    // Get the current user's UID and GID
     let uid = getuid();
     let gid = getgid();
 
-    // The most critical step: unshare the user namespace before forking
     if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER) {
         eprintln!("Failed to unshare User namespace: {}", e);
         exit(1);
     }
+
+    if !uid.is_root() {
+        if let Err(e) = setuid(uid) {
+            eprintln!("Failed to setuid in parent: {}", e);
+            exit(1);
+        }
+    }
     
+    if gid.as_raw() != 0 {
+        if let Err(e) = setgid(gid) {
+            eprintln!("Failed to setgid in parent: {}", e);
+            exit(1);
+        }
+    }
+
+    let command_to_run = &args[2];
+    let command_args = &args[3..];
+
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { child, .. }) => {
-            let status = waitpid(child, None).expect("Failed to wait for child");
+        Ok(ForkResult::Parent { child }) => {
+            // Unshare the mount namespace in the parent to prepare for umount
+            if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+                eprintln!("Failed to unshare Mount namespace in parent: {}", e);
+                exit(1);
+            }
+
+            waitpid(child, None).unwrap();
             
+            // Umount the /proc in the parent process, which is now in its own mount namespace
             if let Err(e) = umount2("/proc", MntFlags::MNT_DETACH) {
                 eprintln!("Failed to unmount /proc filesystem: {}", e);
             }
             
-            match status {
-                WaitStatus::Exited(_, code) => exit(code),
-                _ => {
-                    eprintln!("Child process did not exit with a normal status");
-                    exit(1);
-                }
-            }
+            exit(0);
         }
         Ok(ForkResult::Child) => {
-            // ------------------------------------------------------------------------------------------------
-            // Child Process Logic
-            // ------------------------------------------------------------------------------------------------
+            // Unshare namespaces inside the child process
+            if let Err(e) = unshare(
+                CloneFlags::CLONE_NEWUTS |
+                CloneFlags::CLONE_NEWPID |
+                CloneFlags::CLONE_NEWNS
+            ) {
+                eprintln!("Failed to unshare namespaces: {}", e);
+                exit(1);
+            }
 
-            // UID/GID Mapping (must be done after unshare(CLONE_NEWUSER))
-            let uid_map = format!("0 {} 1", uid.as_raw());
-            let gid_map = format!("0 {} 1", gid.as_raw());
-
+            // UID/GID Mapping (now that we are in a new user namespace)
             if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
-                if let Err(e) = uid_file.write_all(uid_map.as_bytes()) {
+                if let Err(e) = uid_file.write_all(format!("0 {} 1", uid.as_raw()).as_bytes()) {
                     eprintln!("Failed to write to uid_map: {}", e);
                     exit(1);
                 }
@@ -67,23 +86,26 @@ fn main() {
             }
 
             if let Ok(mut gid_file) = File::create("/proc/self/gid_map") {
-                if let Err(e) = gid_file.write_all(gid_map.as_bytes()) {
+                if let Err(e) = gid_file.write_all(format!("0 {} 1", gid.as_raw()).as_bytes()) {
                     eprintln!("Failed to write to gid_map: {}", e);
                     exit(1);
                 }
             }
             
-            // Unshare other namespaces inside the child process
-            if let Err(e) = unshare(
-                CloneFlags::CLONE_NEWUTS |
-                CloneFlags::CLONE_NEWPID |
-                CloneFlags::CLONE_NEWNS
-            ) {
-                eprintln!("Failed to unshare namespaces: {}", e);
+            // Correct order of privilege calls
+            if let Err(e) = setgroups(&[]) {
+                eprintln!("Failed to setgroups in child: {}", e);
+                exit(1);
+            }
+            if let Err(e) = setgid(nix::unistd::Gid::from_raw(0)) {
+                eprintln!("Failed to setgid in child: {}", e);
+                exit(1);
+            }
+            if let Err(e) = setuid(nix::unistd::Uid::from_raw(0)) {
+                eprintln!("Failed to setuid in child: {}", e);
                 exit(1);
             }
             
-            // Set hostname, chroot, and mount /proc in the isolated environment
             if let Err(e) = sethostname("my-container-host") {
                 eprintln!("Failed to set hostname {}", e);
                 exit(1);
@@ -99,29 +121,30 @@ fn main() {
                 exit(1);
             }
 
+            // Mount /proc with correct flags
             if let Err(e) = mount(
                 Some("proc"),
                 "/proc",
                 Some("proc"),
-                MsFlags::empty(),
-                None::<&CStr>,
+                MsFlags::MS_PRIVATE, // This is the key change
+                None::<&str>,
             ) {
                 eprintln!("Failed to mount /proc filesystem {}", e);
                 exit(1);
             }
+
+            let path = CString::new(command_to_run.as_str()).unwrap();
+            let args_c_string: Vec<CString> = command_args
+                .iter()
+                .map(|arg| CString::new(arg.as_str()).unwrap())
+                .collect();
             
-            // Execute the command
-            let command_args = &args[2..];
-            let command = CString::new(command_args[0].clone()).expect("Failed to create CString");
-            let c_args: Vec<CString> = command_args.iter().map(|arg| CString::new(arg.clone()).unwrap()).collect();
-            
-            if let Err(e) = execvp(&command, &c_args) {
-                eprintln!("Failed to execute command: {}", e);
-                exit(1);
-            }
+            execvp(&path, &args_c_string)
+                .expect("Failed to execute command");
+
         }
         Err(e) => {
-            eprintln!("Fork failed: {}", e);
+            eprintln!("Failed to fork: {}", e);
             exit(1);
         }
     }
