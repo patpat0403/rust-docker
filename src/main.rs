@@ -32,7 +32,10 @@ fn main() {
     // Get the current user's UID and GID, which will be 0 when run as root
     let uid = getuid();
     let gid = getgid();
-
+    
+    eprintln!("uid: {} ", uid );
+    eprintln!("gid: {}", gid);
+    
     // Set UID and GID to the mapped values (0 in this case)
     if let Err(e) = setuid(uid) {
         eprintln!("Failed to setuid in parent: {}", e);
