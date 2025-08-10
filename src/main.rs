@@ -2,6 +2,7 @@ use std::process::{Command, exit};
 use std::env;
 use nix::sched::{unshare, CloneFlags};
 use nix::unistd::{sethostname, chroot, chdir};
+use nix::mount::{mount, umount2, MsFlags, MntFlags};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -22,6 +23,17 @@ fn main() {
         eprintln!("Failed to set hostname {}", e);
         exit(1);
     }
+    // step 4 isolate process
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWPID){
+        eprintln!("Failed to create a new process {}", e);
+        exit(1);
+    }
+
+        // Create a new Mount namespace for filesystem isolation
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+        eprintln!("Failed to unshare Mount namespace {}", e);
+        exit(1);
+    }
 
     //step 3 change root filesystem
 
@@ -32,6 +44,18 @@ fn main() {
 
     if let Err(e) = chdir("/"){
         eprintln!("Failed to change to root dir in container {}", e);
+        exit(1);
+    }
+
+        // Mount the /proc filesystem inside the new root
+    if let Err(e) = mount(
+        Some("proc"),
+        "/proc",
+        Some("proc"),
+        MsFlags::empty(),
+        None::<&str>,
+    ) {
+        eprintln!("Failed to mount /proc filesystem {}", e);
         exit(1);
     }
 
