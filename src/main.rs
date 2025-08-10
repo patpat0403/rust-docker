@@ -25,6 +25,15 @@ fn main() {
         exit(1);
     }
 
+                if let Err(e) = unshare(
+                CloneFlags::CLONE_NEWUTS |
+                CloneFlags::CLONE_NEWPID |
+                CloneFlags::CLONE_NEWNS
+            ) {
+                eprintln!("Failed to unshare namespaces: {}", e);
+                exit(1);
+            }
+
     if !uid.is_root() {
         if let Err(e) = setuid(uid) {
             eprintln!("Failed to setuid in parent: {}", e);
@@ -61,14 +70,6 @@ fn main() {
         }
         Ok(ForkResult::Child) => {
             // Unshare namespaces inside the child process
-            if let Err(e) = unshare(
-                CloneFlags::CLONE_NEWUTS |
-                CloneFlags::CLONE_NEWPID |
-                CloneFlags::CLONE_NEWNS
-            ) {
-                eprintln!("Failed to unshare namespaces: {}", e);
-                exit(1);
-            }
 
             // UID/GID Mapping (now that we are in a new user namespace)
             if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
