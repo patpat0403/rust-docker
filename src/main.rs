@@ -128,34 +128,34 @@ fn main() {
                 exit(1);
             }
 
-  // Mount and unmount logic needs to be in a scope that handles cleanup
-            {
-                if let Err(e) = mount(
-                    Some("proc"),
-                    "/proc",
-                    Some("proc"),
-                    MsFlags::empty(),
-                    None::<&str>,
-                ) {
-                    eprintln!("Failed to mount /proc filesystem {}", e);
-                    exit(1);
-                }
+//   // Mount and unmount logic needs to be in a scope that handles cleanup
+//             {
+//                 if let Err(e) = mount(
+//                     Some("proc"),
+//                     "/proc",
+//                     Some("proc"),
+//                     MsFlags::empty(),
+//                     None::<&str>,
+//                 ) {
+//                     eprintln!("Failed to mount /proc filesystem {}", e);
+//                     exit(1);
+//                 }
 
-                // Execute the command here
-                let path = CString::new(command_to_run.as_str()).unwrap();
-                let args_c_string: Vec<CString> = command_args
-                    .iter()
-                    .map(|arg| CString::new(arg.as_str()).unwrap())
-                    .collect();
+//                 // Execute the command here
+//                 let path = CString::new(command_to_run.as_str()).unwrap();
+//                 let args_c_string: Vec<CString> = command_args
+//                     .iter()
+//                     .map(|arg| CString::new(arg.as_str()).unwrap())
+//                     .collect();
                 
-                execvp(&path, &args_c_string)
-                    .expect("Failed to execute command");
+//                 execvp(&path, &args_c_string)
+//                     .expect("Failed to execute command");
 
-                // If execvp fails, this code will run
-                if let Err(e) = umount2("/proc", MntFlags::MNT_DETACH) {
-                    eprintln!("Failed to unmount /proc filesystem {}", e);
-                }
-            }
+//                 // If execvp fails, this code will run
+//                 if let Err(e) = umount2("/proc", MntFlags::MNT_DETACH) {
+//                     eprintln!("Failed to unmount /proc filesystem {}", e);
+//                 }
+//             }
         }
         Err(e) => {
             eprintln!("Failed to fork: {}", e);
