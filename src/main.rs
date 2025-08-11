@@ -34,6 +34,27 @@ fn main() {
         exit(1);
     }
 
+    if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
+        if let Err(e) = uid_file.write_all(format!("0 {} 1", uid.as_raw()).as_bytes()) {
+            eprintln!("Failed to write to uid_map: {}", e);
+            exit(1);
+        }
+    }
+
+    if let Ok(mut setgroups_file) = File::create("/proc/self/setgroups") {
+        if let Err(e) = setgroups_file.write_all(b"deny") {
+            eprintln!("Failed to write to setgroups: {}", e);
+            exit(1);
+        }
+    }
+
+    if let Ok(mut gid_file) = File::create("/proc/self/gid_map") {
+        if let Err(e) = gid_file.write_all(format!("0 {} 1", gid.as_raw()).as_bytes()) {
+            eprintln!("Failed to write to gid_map: {}", e);
+            exit(1);
+        }
+    }
+
     // if !uid.is_root() {
     //     if let Err(e) = setuid(uid) {
     //         eprintln!("Failed to setuid in parent: {}", e);
@@ -54,10 +75,10 @@ fn main() {
     match (unsafe { fork() }) {
         Ok(ForkResult::Parent { child }) => {
             // Unshare the mount namespace in the parent to prepare for umount
-            if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
-                eprintln!("Failed to unshare Mount namespace in parent: {}", e);
-                exit(1);
-            }
+            // if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+            //     eprintln!("Failed to unshare Mount namespace in parent: {}", e);
+            //     exit(1);
+            // }
 
             waitpid(child, None).unwrap();
 
@@ -72,26 +93,6 @@ fn main() {
             // Unshare namespaces inside the child process
 
             // UID/GID Mapping (now that we are in a new user namespace)
-            if let Ok(mut uid_file) = File::create("/proc/self/uid_map") {
-                if let Err(e) = uid_file.write_all(format!("0 {} 1", uid.as_raw()).as_bytes()) {
-                    eprintln!("Failed to write to uid_map: {}", e);
-                    exit(1);
-                }
-            }
-
-            if let Ok(mut setgroups_file) = File::create("/proc/self/setgroups") {
-                if let Err(e) = setgroups_file.write_all(b"deny") {
-                    eprintln!("Failed to write to setgroups: {}", e);
-                    exit(1);
-                }
-            }
-
-            if let Ok(mut gid_file) = File::create("/proc/self/gid_map") {
-                if let Err(e) = gid_file.write_all(format!("0 {} 1", gid.as_raw()).as_bytes()) {
-                    eprintln!("Failed to write to gid_map: {}", e);
-                    exit(1);
-                }
-            }
 
             // if let Err(e) = setgid(nix::unistd::Gid::from_raw(gid.as_raw())) {
             //     eprintln!("Failed to setgid in child: {}", e);
