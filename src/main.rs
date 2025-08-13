@@ -9,14 +9,7 @@ use nix::mount::{ mount, umount2, MsFlags, MntFlags };
 use nix::unistd::{ fork, execvp, ForkResult };
 use std::ffi::CString;
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 3 || args[1] != "run" {
-        eprintln!("Usage: {} run <command> [args...]", args[0]);
-        exit(1);
-    }
-
+fn run_command_in_container(command_to_run: &str, command_args: &[String]) {
     let uid = getuid();
     let gid = getgid();
 
@@ -55,31 +48,8 @@ fn main() {
         }
     }
 
-    // if !uid.is_root() {
-    //     if let Err(e) = setuid(uid) {
-    //         eprintln!("Failed to setuid in parent: {}", e);
-    //         exit(1);
-    //     }
-    // }
-
-    // if gid.as_raw() != 0 {
-    //     if let Err(e) = setgid(gid) {
-    //         eprintln!("Failed to setgid in parent: {}", e);
-    //         exit(1);
-    //     }
-    // }
-
-    let command_to_run = &args[2];
-    let command_args = &args[3..];
-
     match (unsafe { fork() }) {
         Ok(ForkResult::Parent { child }) => {
-            // Unshare the mount namespace in the parent to prepare for umount
-            // if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
-            //     eprintln!("Failed to unshare Mount namespace in parent: {}", e);
-            //     exit(1);
-            // }
-
             waitpid(child, None).unwrap();
 
             // Umount the /proc in the parent process, which is now in its own mount namespace
@@ -90,19 +60,6 @@ fn main() {
             exit(0);
         }
         Ok(ForkResult::Child) => {
-            // Unshare namespaces inside the child process
-
-            // UID/GID Mapping (now that we are in a new user namespace)
-
-            // if let Err(e) = setgid(nix::unistd::Gid::from_raw(gid.as_raw())) {
-            //     eprintln!("Failed to setgid in child: {}", e);
-            //     exit(1);
-            // }
-            // if let Err(e) = setuid(nix::unistd::Uid::from_raw(uid.as_raw())) {
-            //     eprintln!("Failed to setuid in child: {}", e);
-            //     exit(1);
-            // }
-
             if let Err(e) = sethostname("my-container-host") {
                 eprintln!("Failed to set hostname {}", e);
                 exit(1);
@@ -132,7 +89,7 @@ fn main() {
                 exit(1);
             }
 
-            let path = CString::new(command_to_run.as_str()).unwrap();
+            let path = CString::new(command_to_run).unwrap();
             let args_c_string: Vec<CString> = command_args
                 .iter()
                 .map(|arg| CString::new(arg.as_str()).unwrap())
@@ -144,5 +101,21 @@ fn main() {
             eprintln!("Failed to fork: {}", e);
             exit(1);
         }
+    }
+}
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 3 {
+        eprintln!("Usage: {} run <command> [args...]", args[0]);
+        exit(1);
+    }
+
+    let command_to_run = &args[2];
+    let command_args = &args[3..];
+
+    match args[1].as_str() {
+        "run" => run_command_in_container(command_to_run, command_args),
+        _ => eprintln!("Usage: {} run <command> [args...]", args[0]),
     }
 }
