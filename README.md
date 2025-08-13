@@ -8,3 +8,4 @@ currently the implementation features:
 - hostname isolation (step 2)
 - file system isolation (step 3)
 - process isolation (step 4)
+- run container as rootless (step 5)
